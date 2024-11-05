@@ -41,6 +41,24 @@ type Server struct {
 	// Ipxe lists the supported bootable Firmwares, and their
 	// associated ipxe binary.
 	Ipxe map[constants.Firmware][]byte
+	// PxeLinuxAssets lists the supported map of PxeLinux assets.
+	// It links the mac/default to the pxe config file.
+	// Usually the PxeLinux references are referred by several names, like:
+	// The client UUID, if provided by the PXE stack.
+	//
+	// Note that some BIOSes do not have a valid UUID, and it might end up reporting something like all 1's.
+	// This value is represented in the standard UUID format using lowercase hexadecimal digits, e.g. "b8945908-d6a6-41a9-611d-74a6ab80b83d".
+	//
+	// The hardware type (using its ARP "htype" code) and address, all in lowercase hexadecimal with dash separators
+	// For example, for an Ethernet (i.e. ARP hardware type "1") with address "88:99:AA:BB:CC:DD",
+	//  it would search for the filename "01-88-99-aa-bb-cc-dd".
+	//
+	// The client's own IPv4 address in uppercase hexadecimal, followed by removing hex characters, one at a time, from the end.
+	// For example, "192.168.2.91" → "C0A8025B". Then "C0A8025", "C0A802", "C0A80", "C0A8", "C0A", "C0", "C"
+	//
+	// Lowercase "default" string
+	// This is useful to provide configs for just one client or a group of clients. And have a generic fallback for all other clients.
+	PxeLinuxAssets map[string]string
 
 	// Log receives logs on Pixiecore's operation. If nil, logging
 	// is suppressed.

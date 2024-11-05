@@ -47,6 +47,13 @@ func main() {
 		DHCPNoBind: true,
 	}
 
+	/*
+		ret.PxeLinuxAssets = map[string]string{
+			"default": "pxelinux.0",
+		}
+
+	*/
+
 	ret.SetDefaultFirmwares()
 	b, _ := booters.StaticBooter(booterSpec)
 	ret.Booter = b

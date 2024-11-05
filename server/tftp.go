@@ -20,8 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 
@@ -63,29 +63,71 @@ func extractInfo(path string) (net.HardwareAddr, int, error) {
 }
 
 func (s *Server) logTFTPTransfer(clientAddr net.Addr, path string, err error) {
-	mac, _, pathErr := extractInfo(path)
-	if pathErr != nil {
-		s.log("TFTP", "unable to extract mac from request:%v", pathErr)
-		return
-	}
-	if err != nil {
-		s.log("TFTP", "Send of %q to %s failed: %s", path, clientAddr, err)
+	if strings.HasPrefix(path, "pxelinux.cfg/") {
+		if err != nil {
+			// debug logging because pxelinux is very noisy as it does a lot of requests
+			s.debug("TFTP", "Send of %q to %s failed: %s", path, clientAddr, err)
+		} else {
+			_, i, _ := extractInfoPxeLinux(path)
+			s.log("TFTP", "Sent %q to %s", i, clientAddr)
+			//s.machineEvent(mac, machineStateTFTP, "Sent Pxelinux asset to %s", clientAddr)
+		}
 	} else {
-		s.log("TFTP", "Sent %q to %s", mac.String(), clientAddr)
-		s.machineEvent(mac, machineStateTFTP, "Sent iPXE to %s", clientAddr)
+		mac, _, pathErr := extractInfo(path)
+		if pathErr != nil {
+			s.log("TFTP", "unable to extract mac from request:%v", pathErr)
+			return
+		}
+		if err != nil {
+			s.log("TFTP", "Send of %q to %s failed: %s", path, clientAddr, err)
+		} else {
+			s.log("TFTP", "Sent %q to %s", mac.String(), clientAddr)
+			s.machineEvent(mac, machineStateTFTP, "Sent iPXE to %s", clientAddr)
+		}
 	}
 }
 
 func (s *Server) handleTFTP(path string, clientAddr net.Addr) (io.ReadCloser, int64, error) {
-	_, i, err := extractInfo(path)
-	if err != nil {
-		return nil, 0, fmt.Errorf("unknown path %q", path)
-	}
+	if strings.HasPrefix(path, "pxelinux.cfg/") {
+		_, i, err := extractInfoPxeLinux(path)
+		if err != nil {
+			return nil, 0, fmt.Errorf("unknown path %q", path)
+		}
+		f, ok := s.PxeLinuxAssets[i]
+		if !ok {
+			return nil, 0, fmt.Errorf("PxeLinux asset not found with key %s", i)
+		}
+		bs, err := os.ReadFile(f)
+		if err != nil {
+			s.log("TFTP", "Failed to read file %q: %s", f, err)
+			return nil, 0, err
+		}
+		return io.NopCloser(bytes.NewBuffer(bs)), int64(len(bs)), nil
+	} else {
+		_, i, err := extractInfo(path)
+		if err != nil {
+			return nil, 0, fmt.Errorf("unknown path %q", path)
+		}
 
-	bs, ok := s.Ipxe[constants.Firmware(i)]
-	if !ok {
-		return nil, 0, fmt.Errorf("unknown firmware type %d", i)
-	}
+		bs, ok := s.Ipxe[constants.Firmware(i)]
+		if !ok {
+			return nil, 0, fmt.Errorf("unknown firmware type %d", i)
+		}
 
-	return ioutil.NopCloser(bytes.NewBuffer(bs)), int64(len(bs)), nil
+		return io.NopCloser(bytes.NewBuffer(bs)), int64(len(bs)), nil
+	}
+}
+
+func extractInfoPxeLinux(path string) (net.HardwareAddr, string, error) {
+	var mac net.HardwareAddr
+	pathElements := strings.Split(path, "/")
+	if len(pathElements) != 2 {
+		return nil, "", errors.New("not found")
+	}
+	cleanedMac := strings.Replace(pathElements[1], "01-", "", 1)
+	mac, _ = net.ParseMAC(cleanedMac)
+	// We return:
+	// parsed Mac address if possible
+	// the filename of the pxelinux config requested
+	return mac, pathElements[1], nil
 }
